@@ -1,0 +1,8 @@
+[Unit]
+Description=Scrub all active rmdadm arrays
+After=rmdadm.service
+
+[Service]
+Type=oneshot
+# Assuming a script or command to scrub all arrays, for now a placeholder shell command mapping to the API
+ExecStart=/bin/sh -c 'for dev in /sys/block/md*; do [ -d "$dev" ] && curl -X POST http://localhost:8080/api/v1/arrays/${dev##*/}/scrub -d "{\"repair\": false}" -H "Content-Type: application/json"; done'

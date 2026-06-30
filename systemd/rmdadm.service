@@ -1,0 +1,13 @@
+[Unit]
+Description=rmdadm API Server and Monitoring Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/rmdadm daemon
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

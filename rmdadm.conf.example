@@ -1,0 +1,104 @@
+# rmdadm Configuration File
+# Copy this file to /etc/rmdadm/rmdadm.conf and customize as needed
+# Environment variables take precedence over this configuration
+
+# Server Configuration
+server:
+  # Address to bind the API server
+  bind_address: "0.0.0.0:8080"
+  
+  # Enable TLS (requires cert and key)
+  enable_tls: false
+  
+  # TLS certificate path (if enable_tls is true)
+  # tls_cert: "/etc/rmdadm/cert.pem"
+  
+  # TLS key path (if enable_tls is true)
+  # tls_key: "/etc/rmdadm/key.pem"
+
+# Authentication Configuration
+auth:
+  # Disable authentication (NOT RECOMMENDED for production)
+  disable_auth: false
+  
+  # JWT secret key (CHANGE THIS IN PRODUCTION!)
+  jwt_secret: "change-me-in-production"
+  
+  # JWT token expiry in hours
+  token_expiry_hours: 24
+  
+  # API key for simple authentication (optional)
+  # api_key: "your-secure-api-key-here"
+  
+  # Admin credentials (CHANGE THESE IN PRODUCTION!)
+  admin_user: "admin"
+  admin_password: "changeme"
+
+# Rate Limiting Configuration
+rate_limit:
+  # Enable rate limiting
+  enabled: true
+  
+  # Maximum requests per window
+  max_requests: 100
+  
+  # Time window in seconds
+  window_seconds: 60
+
+# Monitoring Configuration
+monitoring:
+  # Enable background array monitoring
+  enabled: true
+  
+  # Monitoring interval in seconds
+  interval_seconds: 60
+  
+  # Webhook URL for alerts (optional)
+  # webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  
+  # Email configuration for alerts (optional)
+  # email:
+  #   smtp_server: "smtp.gmail.com"
+  #   smtp_port: 587
+  #   smtp_username: "your-email@gmail.com"
+  #   smtp_password: "your-app-password"
+  #   from_address: "rmdadm@yourdomain.com"
+  #   to_addresses:
+  #     - "admin@yourdomain.com"
+  #     - "ops@yourdomain.com"
+
+# Logging Configuration
+logging:
+  # Log level: trace, debug, info, warn, error
+  level: "info"
+  
+  # Log directory (logs will be rotated daily)
+  log_dir: "/var/log/rmdadm"
+  
+  # Enable JSON formatted logs
+  json_format: false
+
+# Environment Variable Overrides:
+# The following environment variables can override config file settings:
+#
+# Server:
+#   RMDADM_BIND_ADDRESS - Server bind address
+#
+# Authentication:
+#   RMDADM_DISABLE_AUTH - Disable authentication (any value)
+#   RMDADM_JWT_SECRET - JWT secret key
+#   RMDADM_API_KEY - API key for authentication
+#   RMDADM_ADMIN_USER - Admin username
+#   RMDADM_ADMIN_PASSWORD - Admin password
+#
+# Rate Limiting:
+#   RMDADM_DISABLE_RATE_LIMIT - Disable rate limiting (any value)
+#   RMDADM_RATE_LIMIT_MAX - Maximum requests per window
+#   RMDADM_RATE_LIMIT_WINDOW - Time window in seconds
+#
+# Monitoring:
+#   RMDADM_WEBHOOK_URL - Webhook URL for alerts
+#   RMDADM_MONITOR_INTERVAL - Monitoring interval in seconds
+#
+# Logging:
+#   RUST_LOG - Log level (overrides logging.level)

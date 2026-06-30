@@ -1,0 +1,4 @@
+# udev rules for rmdadm
+# Automatically assemble arrays when component devices are discovered
+
+SUBSYSTEM=="block", ACTION=="add|change", ENV{ID_FS_TYPE}=="linux_raid_member", RUN+="/usr/local/sbin/rmdadm assemble --auto $env{DEVNAME}"
