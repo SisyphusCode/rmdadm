@@ -15,6 +15,12 @@ A modern, high-performance rewrite of `mdadm` in Rust with a REST API, Web UI da
 - ✅ **Dry-run mode** - Test operations safely before execution
 - ✅ **Array operations** - Add, remove, fail disks dynamically
 
+### Advanced RAID Features
+- 🔄 **RAID Reshape** - Change RAID levels, chunk sizes, and layouts dynamically
+- 📝 **Write-Intent Bitmaps** - Internal/external bitmaps for faster resync
+- 🔥 **Hot Spare Management** - Automatic failover with spare disk pools
+- 🔧 **Array Migration** - Safe data migration between configurations
+
 ### Web UI Dashboard
 - 🎨 **Modern Interface** - Dark-themed, responsive web dashboard
 - 📊 **Real-time Monitoring** - Live array status and health metrics
@@ -147,6 +153,57 @@ sudo rmdadm manage /dev/md0 --fail /dev/sdb1
 
 # Stop an array
 sudo rmdadm stop /dev/md0
+```
+
+#### RAID Reshape Operations
+```bash
+# Change RAID level from RAID5 to RAID6
+sudo rmdadm reshape /dev/md0 --level=6
+
+# Change chunk size
+sudo rmdadm reshape /dev/md0 --chunk-size=128
+
+# Grow array by adding devices
+sudo rmdadm reshape /dev/md0 --delta=2
+
+# Shrink array by removing devices
+sudo rmdadm reshape /dev/md0 --delta=-1
+
+# Monitor reshape progress
+watch cat /proc/mdstat
+```
+
+#### Write-Intent Bitmap Management
+```bash
+# Add internal bitmap
+sudo rmdadm bitmap /dev/md0 add --location=internal --chunk-size=64
+
+# Add external bitmap
+sudo rmdadm bitmap /dev/md0 add --location=external --file=/var/lib/mdadm/bitmap.md0
+
+# Show bitmap information
+sudo rmdadm bitmap /dev/md0 info
+
+# Clear bitmap (mark all blocks clean)
+sudo rmdadm bitmap /dev/md0 clear
+
+# Remove bitmap
+sudo rmdadm bitmap /dev/md0 remove
+```
+
+#### Hot Spare Management
+```bash
+# Add a hot spare
+sudo rmdadm spare /dev/md0 add /dev/sde1
+
+# List all spares
+sudo rmdadm spare /dev/md0 list
+
+# Remove a spare
+sudo rmdadm spare /dev/md0 remove /dev/sde1
+
+# Manually activate a spare
+sudo rmdadm spare /dev/md0 activate /dev/sde1 --slot=2
 ```
 
 #### Monitoring
@@ -452,23 +509,27 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🗺️ Roadmap
 
 ### Completed ✅
-- [x] Web UI dashboard
-- [x] Email notifications
-- [x] JWT/API key authentication
-- [x] Rate limiting
-- [x] OpenAPI documentation
+- [x] Core RAID operations (create, assemble, manage)
+- [x] Web UI dashboard with real-time monitoring
+- [x] Email notifications with SMTP support
+- [x] JWT/API key authentication with RBAC
+- [x] Rate limiting and security features
+- [x] OpenAPI/Swagger documentation
 - [x] Configuration file support
-- [x] Webhook alerts
-- [x] Prometheus metrics
+- [x] Webhook alerts for degraded arrays
+- [x] Prometheus metrics export
+- [x] RAID reshape operations (level, chunk, layout)
+- [x] Write-intent bitmap support (internal/external)
+- [x] Hot spare management with automatic failover
 
 ### Planned 🚧
-- [ ] RAID reshape operations
-- [ ] Bitmap support
-- [ ] Hot spare management
-- [ ] Array migration tools
-- [ ] Performance benchmarking
+- [ ] Array migration tools for safe data movement
+- [ ] Performance benchmarking suite
 - [ ] Docker container support
-- [ ] Kubernetes operator
+- [ ] Kubernetes operator for cloud-native deployments
+- [ ] Advanced monitoring with predictive failure detection
+- [ ] Multi-node cluster support
+- [ ] Automated testing framework
 
 ## ⚠️ Disclaimer
 
@@ -476,4 +537,4 @@ This software is provided "as is" without warranty. Always backup your data befo
 
 ---
 
-**Made with ❤️ and Rust by SisyphusCode**
+**Made with ❤️ and Rust by [SisyphusCode](https://github.com/SisyphusCode)**
