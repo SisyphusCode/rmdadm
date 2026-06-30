@@ -86,6 +86,113 @@ async fn main() -> Result<(), error::MdError> {
             
             api::start_server(socket_addr, config).await
         }
+        Command::Reshape { md_device, level, chunk_size, layout, delta, backup_file, force } => {
+            info!("Reshaping array: {}", md_device.display());
+            let config = ops::reshape::ReshapeConfig {
+                target_level: level,
+                target_chunk_size: chunk_size,
+                target_layout: layout,
+                device_delta: delta,
+                backup_file,
+                force,
+            };
+            ops::reshape::reshape_array(&md_device, config, args.dry_run)
+        }
+        Command::Bitmap { md_device, action } => {
+            use cli::BitmapAction;
+            match action {
+                BitmapAction::Add { location, chunk_size, file } => {
+                    info!("Adding bitmap to array: {}", md_device.display());
+                    let bitmap_location = match location.as_str() {
+                        "internal" => ops::bitmap::BitmapLocation::Internal,
+                        "external" => ops::bitmap::BitmapLocation::External,
+                        _ => return Err(error::MdError::ConfigValidation(
+                            format!("Invalid bitmap location: {}", location)
+                        )),
+                    };
+                    let config = ops::bitmap::BitmapConfig {
+                        location: bitmap_location,
+                        chunk_size,
+                        file_path: file,
+                        write_behind: None,
+                    };
+                    ops::bitmap::add_bitmap(&md_device, config, args.dry_run)
+                }
+                BitmapAction::Remove => {
+                    info!("Removing bitmap from array: {}", md_device.display());
+                    ops::bitmap::remove_bitmap(&md_device, args.dry_run)
+                }
+                BitmapAction::Info => {
+                    info!("Getting bitmap info for array: {}", md_device.display());
+                    let info = ops::bitmap::get_bitmap_info(&md_device)?;
+                    if args.json {
+                        println!("{}", serde_json::to_string_pretty(&info)?);
+                    } else {
+                        println!("Bitmap Information:");
+                        println!("  Enabled: {}", info.enabled);
+                        if info.enabled {
+                            println!("  Location: {:?}", info.location);
+                            if let Some(chunk) = info.chunk_size {
+                                println!("  Chunk Size: {} KB", chunk);
+                            }
+                            if let Some(ref path) = info.file_path {
+                                println!("  File Path: {}", path);
+                            }
+                            if let Some(pages) = info.pages {
+                                println!("  Total Pages: {}", pages);
+                            }
+                            if let Some(dirty) = info.dirty_pages {
+                                println!("  Dirty Pages: {}", dirty);
+                            }
+                        }
+                    }
+                    Ok(())
+                }
+                BitmapAction::Clear => {
+                    info!("Clearing bitmap for array: {}", md_device.display());
+                    ops::bitmap::clear_bitmap(&md_device)
+                }
+            }
+        }
+        Command::Spare { md_device, action } => {
+            use cli::SpareAction;
+            match action {
+                SpareAction::Add { spare_device, force } => {
+                    info!("Adding spare {} to array {}", spare_device.display(), md_device.display());
+                    ops::spare::add_spare(&md_device, &spare_device, force, args.dry_run)
+                }
+                SpareAction::Remove { spare_device } => {
+                    info!("Removing spare {} from array {}", spare_device.display(), md_device.display());
+                    ops::spare::remove_spare(&md_device, &spare_device, args.dry_run)
+                }
+                SpareAction::List => {
+                    info!("Listing spares for array: {}", md_device.display());
+                    let spares = ops::spare::list_spares(&md_device)?;
+                    if args.json {
+                        println!("{}", serde_json::to_string_pretty(&spares)?);
+                    } else {
+                        if spares.is_empty() {
+                            println!("No spare disks found in array");
+                        } else {
+                            println!("Spare Disks:");
+                            for spare in spares {
+                                println!("  Device: {}", spare.device);
+                                println!("    State: {}", spare.state);
+                                if let Some(slot) = spare.slot {
+                                    println!("    Slot: {}", slot);
+                                }
+                                println!();
+                            }
+                        }
+                    }
+                    Ok(())
+                }
+                SpareAction::Activate { spare_device, slot } => {
+                    info!("Activating spare {} in array {}", spare_device.display(), md_device.display());
+                    ops::spare::activate_spare(&md_device, &spare_device, slot)
+                }
+            }
+        }
     };
 
     match result {

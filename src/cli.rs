@@ -67,4 +67,73 @@ pub enum Command {
         #[arg(long, default_value = "0.0.0.0:8080")]
         addr: String,
     },
+    /// Reshape an existing RAID array
+    Reshape {
+        md_device: PathBuf,
+        #[arg(long)]
+        level: Option<u8>,
+        #[arg(long)]
+        chunk_size: Option<u32>,
+        #[arg(long)]
+        layout: Option<String>,
+        #[arg(long)]
+        delta: Option<i32>,
+        #[arg(long)]
+        backup_file: Option<String>,
+        #[arg(long)]
+        force: bool,
+    },
+    /// Manage write-intent bitmaps
+    Bitmap {
+        md_device: PathBuf,
+        #[command(subcommand)]
+        action: BitmapAction,
+    },
+    /// Manage hot spare disks
+    Spare {
+        md_device: PathBuf,
+        #[command(subcommand)]
+        action: SpareAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BitmapAction {
+    /// Add bitmap to array
+    Add {
+        #[arg(long, default_value = "internal")]
+        location: String,
+        #[arg(long)]
+        chunk_size: Option<u32>,
+        #[arg(long)]
+        file: Option<String>,
+    },
+    /// Remove bitmap from array
+    Remove,
+    /// Show bitmap information
+    Info,
+    /// Clear bitmap (mark all blocks clean)
+    Clear,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SpareAction {
+    /// Add a hot spare to array
+    Add {
+        spare_device: PathBuf,
+        #[arg(long)]
+        force: bool,
+    },
+    /// Remove a spare from array
+    Remove {
+        spare_device: PathBuf,
+    },
+    /// List all spares in array
+    List,
+    /// Activate a spare disk
+    Activate {
+        spare_device: PathBuf,
+        #[arg(long)]
+        slot: Option<u32>,
+    },
 }

@@ -39,6 +39,17 @@ impl MdSysfs {
             .map_err(|e| MdError::Sysfs(format!("Failed to read sync_action: {}", e)))?;
         Ok(action.trim().to_string())
     }
+
+    pub fn read_sysfs_value(&self, name: &str) -> Result<String, std::io::Error> {
+        let path = self.base_path.join("md").join(name);
+        let value = fs::read_to_string(&path)?;
+        Ok(value.trim().to_string())
+    }
+
+    pub fn write_sysfs_value(&self, name: &str, value: &str) -> Result<(), std::io::Error> {
+        let path = self.base_path.join("md").join(name);
+        fs::write(&path, value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

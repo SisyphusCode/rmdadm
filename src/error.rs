@@ -41,6 +41,15 @@ pub enum MdError {
     #[error("Array {0} is not found or not active")]
     ArrayNotFound(String),
     
+    #[error("Device not found: {0}")]
+    DeviceNotFound(String),
+    
+    #[error("Invalid device: {0}")]
+    InvalidDevice(String),
+    
+    #[error("Invalid state: {0}")]
+    InvalidState(String),
+    
     #[error("Array {0} is in state '{1}', expected '{2}'")]
     InvalidArrayState(String, String, String),
     

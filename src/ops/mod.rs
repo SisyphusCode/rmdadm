@@ -5,3 +5,6 @@ pub mod manage;
 pub mod apply;
 pub mod monitor;
 pub mod exporter;
+pub mod reshape;
+pub mod bitmap;
+pub mod spare;
