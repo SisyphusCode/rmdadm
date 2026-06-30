@@ -588,15 +588,17 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [x] RAID reshape operations (level, chunk, layout)
 - [x] Write-intent bitmap support (internal/external)
 - [x] Hot spare management with automatic failover
+- [x] Array migration tools for safe data movement
+- [x] Performance benchmarking suite
+- [x] Docker container support
+- [x] Kubernetes operator for cloud-native deployments
+- [x] Advanced monitoring with predictive failure detection
+- [x] Multi-node cluster support
+- [x] Automated testing framework
 
 ### Planned 🚧
-- [ ] Array migration tools for safe data movement
-- [ ] Performance benchmarking suite
-- [ ] Docker container support
-- [ ] Kubernetes operator for cloud-native deployments
-- [ ] Advanced monitoring with predictive failure detection
-- [ ] Multi-node cluster support
-- [ ] Automated testing framework
+- [ ] Next generation Web UI
+- [ ] BTRFS integration
 
 ## ⚠️ Disclaimer
 

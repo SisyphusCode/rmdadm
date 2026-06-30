@@ -10,7 +10,9 @@ mod logging;
 mod api;
 mod daemon;
 mod notifications;
-
+mod monitoring;
+mod migration;
+mod cluster;
 use clap::Parser;
 use cli::{Cli, Command};
 use tracing::{info, error};

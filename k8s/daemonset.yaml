@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: rmdadm-operator
+  namespace: kube-system
+  labels:
+    app: rmdadm
+spec:
+  selector:
+    matchLabels:
+      app: rmdadm
+  template:
+    metadata:
+      labels:
+        app: rmdadm
+    spec:
+      hostNetwork: true
+      hostPID: true
+      containers:
+      - name: rmdadm
+        image: sisyphuscode/rmdadm:latest
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: dev
+          mountPath: /dev
+        - name: sys
+          mountPath: /sys
+        - name: run-udev
+          mountPath: /run/udev
+      volumes:
+      - name: dev
+        hostPath:
+          path: /dev
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: run-udev
+        hostPath:
+          path: /run/udev
