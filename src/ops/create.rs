@@ -79,15 +79,9 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
     array_info.chunk_size = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE);
 
     if dry_run {
-        info!("[DRY RUN] Would SET_ARRAY_INFO for {}", md_device.display());
+        info!("[DRY RUN] Would skip SET_ARRAY_INFO for v1.x metadata");
     } else {
-        debug!("Setting array info: level={}, raid_disks={}, chunk_size={}", 
-               array_info.level, array_info.raid_disks, array_info.chunk_size);
-        unsafe {
-            ioctl::set_array_info(md_file.as_raw_fd(), &mut array_info as *mut _)
-                .map_err(|e| MdError::Nix(e).context("Failed to set array info"))?;
-        }
-        info!("Array info set successfully");
+        debug!("Skipping SET_ARRAY_INFO: not required for v1.x metadata");
     }
 
     // Generate a random UUID
@@ -155,10 +149,10 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
         
         let mut disk_info = MduDiskInfo::default();
         disk_info.number = i as i32;
-        disk_info.raid_disk = i as i32;
-        disk_info.state = MD_DISK_ACTIVE | MD_DISK_SYNC;
         disk_info.major = ((rdev >> 8) & 0xff) as i32;
         disk_info.minor = (rdev & 0xff) as i32;
+        disk_info.raid_disk = i as i32;
+        disk_info.state = (1 << MD_DISK_ACTIVE) | (1 << MD_DISK_SYNC);
 
         if dry_run {
             info!("[DRY RUN] Would write superblock to {}", comp.display());
