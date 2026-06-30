@@ -3,6 +3,9 @@
 **/*.rs.bk
 *.pdb
 
+# Bob Shell working directory
+.bob/
+
 # Cargo lock file (uncomment if building a library)
 # Cargo.lock
 
