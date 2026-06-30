@@ -17,21 +17,24 @@ use utoipa::OpenApi;
 /// Array management routes with authentication
 pub fn array_routes(auth_state: AuthState) -> Router {
     Router::new()
-        // Read-only routes
+        // Read-only routes (require authentication)
         .route("/api/v1/arrays", get(handlers::list_arrays))
         .route("/api/v1/arrays/:name", get(handlers::get_array_detail))
-        .route_layer(middleware::from_fn_with_state(
+        // Operator routes (manage existing arrays)
+        .route("/api/v1/arrays/:name/manage", post(handlers::manage_array)
+            .route_layer(middleware::from_fn(auth::require_role(UserRole::Operator))))
+        .route("/api/v1/arrays/:name/scrub", post(handlers::scrub_array)
+            .route_layer(middleware::from_fn(auth::require_role(UserRole::Operator))))
+        // Admin routes (create/delete arrays)
+        .route("/api/v1/arrays", post(handlers::create_array)
+            .route_layer(middleware::from_fn(auth::require_role(UserRole::Admin))))
+        .route("/api/v1/arrays/:name", delete(handlers::stop_array)
+            .route_layer(middleware::from_fn(auth::require_role(UserRole::Admin))))
+        // Apply auth middleware to all routes
+        .layer(middleware::from_fn_with_state(
             auth_state.clone(),
             auth::auth_middleware,
         ))
-        // Operator routes (manage existing arrays)
-        .route("/api/v1/arrays/:name/manage", post(handlers::manage_array))
-        .route("/api/v1/arrays/:name/scrub", post(handlers::scrub_array))
-        .route_layer(middleware::from_fn(auth::require_role(UserRole::Operator)))
-        // Admin routes (create/delete arrays)
-        .route("/api/v1/arrays", post(handlers::create_array))
-        .route("/api/v1/arrays/:name", delete(handlers::stop_array))
-        .route_layer(middleware::from_fn(auth::require_role(UserRole::Admin)))
 }
 
 /// Authentication routes (no auth required)
