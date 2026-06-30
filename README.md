@@ -108,12 +108,79 @@ Access the modern web interface at `http://localhost:8080/`
 - Username: `admin`
 - Password: `changeme` (⚠️ Change in production!)
 
-**Features:**
+#### Getting Started with the Web UI
+
+1. **Access the Dashboard**
+   ```bash
+   # Open in your browser
+   http://localhost:8080/
+   
+   # Or from a remote machine (if firewall allows)
+   http://your-server-ip:8080/
+   ```
+
+2. **Login**
+   - Enter username: `admin`
+   - Enter password: `changeme`
+   - Click "Login" to authenticate
+   - You'll receive a JWT token valid for 24 hours
+
+3. **Dashboard Overview**
+   - **System Overview**: View health statistics (healthy/degraded/failed arrays)
+   - **RAID Arrays**: See all arrays with real-time status
+   - **Recent Events**: Monitor system events and alerts
+   - **Auto-refresh**: Dashboard updates every 10 seconds automatically
+
+4. **Managing Arrays via Web UI**
+
+   **View Array Details:**
+   - Click "Details" button on any array card
+   - View complete array information, devices, and sync status
+   
+   **Create New Array:**
+   - Click "Create Array" button
+   - Fill in array name (e.g., `/dev/md0`)
+   - Select RAID level (0, 1, 4, 5, 6, 10)
+   - Enter device paths (comma-separated: `/dev/sdb1,/dev/sdc1`)
+   - Set chunk size and metadata version
+   - Enable "Dry run" to test without creating
+   - Click "Create Array"
+   
+   **Scrub Array:**
+   - Click "Scrub" button on array card
+   - Confirms data integrity check
+   - Monitor progress in array details
+   
+   **Stop Array:**
+   - Click "Stop" button on array card
+   - Confirm the action
+   - Array becomes unavailable until reassembled
+
+5. **Troubleshooting**
+
+   **Cannot Login:**
+   - Verify service is running: `sudo systemctl status rmdadm.service`
+   - Check logs: `sudo journalctl -u rmdadm.service -n 50`
+   - Ensure correct credentials (default: admin/changeme)
+   - Try resetting JWT secret in config file
+   
+   **Dashboard Not Loading:**
+   - Check if port 8080 is accessible: `curl http://localhost:8080/health`
+   - Verify firewall rules: `sudo firewall-cmd --list-ports`
+   - Check web files exist: `ls /usr/share/rmdadm/web/`
+   
+   **Arrays Not Showing:**
+   - Verify you have RAID arrays: `cat /proc/mdstat`
+   - Check API endpoint: `curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/arrays`
+   - Review service logs for errors
+
+**Web UI Features:**
 - Real-time array monitoring with auto-refresh
 - System overview with health statistics
 - Interactive array management (create, stop, scrub)
 - Event logging and notifications
 - Mobile-responsive design
+- Dark theme optimized for monitoring
 
 ### Command Line Interface
 
