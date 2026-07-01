@@ -2,12 +2,10 @@
 //! Allows changing RAID level, layout, or chunk size of existing arrays
 
 use std::path::Path;
-use std::fs;
 use std::io::{self, Write};
-use tracing::{info, warn, error, debug};
+use tracing::{info, warn, debug};
 use crate::error::MdError;
 use crate::sysfs::MdSysfs;
-use crate::validation;
 
 /// Reshape operation types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

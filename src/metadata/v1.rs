@@ -51,7 +51,7 @@ pub struct SuperblockV1 {
     pub level: i32,
     pub layout: i32,
     pub size: u64,       // Size of component devices in 512-byte sectors
-    pub chunksize: i32,
+    pub chunksize: i32,   // Chunk size in 512-byte sectors
     pub raid_disks: i32,
     pub bitmap_offset: i32, // Sectors after start of superblock
     
@@ -70,6 +70,13 @@ pub struct SuperblockV1 {
     pub recovery_offset: u64, // Sectors for recovery
     pub dev_number: u32,     // Persistent device number
     pub cnt_corrected_read: u32, // Number of read errors corrected
+    pub device_uuid: [u8; 16],
+    pub devflags: u8,
+
+    // Bad block log
+    pub bblog_shift: u8,
+    pub bblog_size: u16,
+    pub bblog_offset: u32,
     
     // Device role in array
     pub dev_roles: Vec<u16>, // Role of each device (index by dev_number)
@@ -78,11 +85,7 @@ pub struct SuperblockV1 {
     pub sb_csum: u32,        // Checksum of superblock
     pub events: u64,         // Event counter
     pub resync_offset: u64,  // Resync position
-    
-    // Bad block log
-    pub bblog_shift: u8,
-    pub bblog_size: u16,
-    pub bblog_offset: u32,
+    pub pad3: [u8; 32],
     
     // Device list
     pub max_dev: u32,        // Maximum number of devices
@@ -123,13 +126,16 @@ impl Default for SuperblockV1 {
             recovery_offset: 0,
             dev_number: 0,
             cnt_corrected_read: 0,
+            device_uuid: [0; 16],
+            devflags: 0,
+            bblog_shift: 0,
+            bblog_size: 0,
+            bblog_offset: 0,
             dev_roles: Vec::new(),
             sb_csum: 0,
             events: 0,
             resync_offset: 0,
-            bblog_shift: 0,
-            bblog_size: 0,
-            bblog_offset: 0,
+            pad3: [0; 32],
             max_dev: 0,
             minor_version: 2,
             pad_bytes: Vec::new(),
@@ -211,6 +217,74 @@ impl SuperblockV1 {
             _ => "unknown",
         }
     }
+
+    pub fn chunk_size_bytes(&self) -> i32 {
+        self.chunksize.saturating_mul(512)
+    }
+
+    fn checksum(bytes: &[u8]) -> u32 {
+        let mut sum = 0u64;
+        let mut chunks = bytes.chunks_exact(4);
+
+        for chunk in &mut chunks {
+            sum = sum.wrapping_add(u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) as u64);
+        }
+
+        let remainder = chunks.remainder();
+        if remainder.len() == 2 {
+            sum = sum.wrapping_add(u16::from_le_bytes([remainder[0], remainder[1]]) as u64);
+        }
+
+        ((sum & 0xffff_ffff) + (sum >> 32)) as u32
+    }
+
+    fn serialize_with_csum(&self, sb_csum: u32) -> std::io::Result<Vec<u8>> {
+        let mut bytes = Vec::with_capacity(256 + self.max_dev as usize * 2);
+
+        bytes.write_u32::<LittleEndian>(self.magic)?;
+        bytes.write_u32::<LittleEndian>(self.major_version)?;
+        bytes.write_u32::<LittleEndian>(self.feature_map)?;
+        bytes.write_u32::<LittleEndian>(self.pad0)?;
+        bytes.write_all(&self.set_uuid)?;
+        bytes.write_all(&self.set_name)?;
+        bytes.write_u64::<LittleEndian>(self.ctime)?;
+        bytes.write_i32::<LittleEndian>(self.level)?;
+        bytes.write_i32::<LittleEndian>(self.layout)?;
+        bytes.write_u64::<LittleEndian>(self.size)?;
+        bytes.write_i32::<LittleEndian>(self.chunksize)?;
+        bytes.write_i32::<LittleEndian>(self.raid_disks)?;
+        bytes.write_i32::<LittleEndian>(self.bitmap_offset)?;
+        bytes.write_i32::<LittleEndian>(self.new_level)?;
+        bytes.write_u64::<LittleEndian>(self.reshape_position)?;
+        bytes.write_i32::<LittleEndian>(self.delta_disks)?;
+        bytes.write_i32::<LittleEndian>(self.new_layout)?;
+        bytes.write_i32::<LittleEndian>(self.new_chunk)?;
+        bytes.write_i32::<LittleEndian>(self.new_offset)?;
+        bytes.write_u64::<LittleEndian>(self.data_offset)?;
+        bytes.write_u64::<LittleEndian>(self.data_size)?;
+        bytes.write_u64::<LittleEndian>(self.super_offset)?;
+        bytes.write_u64::<LittleEndian>(self.recovery_offset)?;
+        bytes.write_u32::<LittleEndian>(self.dev_number)?;
+        bytes.write_u32::<LittleEndian>(self.cnt_corrected_read)?;
+        bytes.write_all(&self.device_uuid)?;
+        bytes.write_u8(self.devflags)?;
+        bytes.write_u8(self.bblog_shift)?;
+        bytes.write_u16::<LittleEndian>(self.bblog_size)?;
+        bytes.write_u32::<LittleEndian>(self.bblog_offset)?;
+        bytes.write_u64::<LittleEndian>(self.utime)?;
+        bytes.write_u64::<LittleEndian>(self.events)?;
+        bytes.write_u64::<LittleEndian>(self.resync_offset)?;
+        bytes.write_u32::<LittleEndian>(sb_csum)?;
+        bytes.write_u32::<LittleEndian>(self.max_dev)?;
+        bytes.write_all(&self.pad3)?;
+
+        for idx in 0..self.max_dev as usize {
+            let role = self.dev_roles.get(idx).copied().unwrap_or(MD_DISK_ROLE_SPARE);
+            bytes.write_u16::<LittleEndian>(role)?;
+        }
+
+        Ok(bytes)
+    }
 }
 
 impl Superblock for SuperblockV1 {
@@ -272,11 +346,20 @@ impl Superblock for SuperblockV1 {
                     let dev_number = file.read_u32::<LittleEndian>().unwrap_or(0);
                     let cnt_corrected_read = file.read_u32::<LittleEndian>().unwrap_or(0);
                     
+                    let mut device_uuid = [0u8; 16];
+                    file.read_exact(&mut device_uuid).ok();
+                    let devflags = file.read_u8().unwrap_or(0);
+                    let bblog_shift = file.read_u8().unwrap_or(0);
+                    let bblog_size = file.read_u16::<LittleEndian>().unwrap_or(0);
+                    let bblog_offset = file.read_u32::<LittleEndian>().unwrap_or(0);
+                    
                     let utime = file.read_u64::<LittleEndian>().unwrap_or(ctime);
                     let events = file.read_u64::<LittleEndian>().unwrap_or(0);
                     let resync_offset = file.read_u64::<LittleEndian>().unwrap_or(0);
                     let sb_csum = file.read_u32::<LittleEndian>().unwrap_or(0);
                     let max_dev = file.read_u32::<LittleEndian>().unwrap_or(raid_disks as u32);
+                    let mut pad3 = [0u8; 32];
+                    file.read_exact(&mut pad3).ok();
                     
                     // Read device roles
                     let mut dev_roles = Vec::new();
@@ -287,10 +370,6 @@ impl Superblock for SuperblockV1 {
                             break;
                         }
                     }
-                    
-                    let bblog_shift = file.read_u8().unwrap_or(0);
-                    let bblog_size = file.read_u16::<LittleEndian>().unwrap_or(0);
-                    let bblog_offset = file.read_u32::<LittleEndian>().unwrap_or(0);
 
                     let sb = SuperblockV1 {
                         magic,
@@ -319,18 +398,32 @@ impl Superblock for SuperblockV1 {
                         recovery_offset,
                         dev_number,
                         cnt_corrected_read,
+                        device_uuid,
+                        devflags,
+                        bblog_shift,
+                        bblog_size,
+                        bblog_offset,
                         dev_roles,
                         sb_csum,
                         events,
                         resync_offset,
-                        bblog_shift,
-                        bblog_size,
-                        bblog_offset,
+                        pad3,
                         max_dev,
                         minor_version: minor,
                         pad_bytes: Vec::new(),
                     };
                     
+                    let calculated_csum = Self::checksum(&sb.serialize_with_csum(0)?);
+                    if calculated_csum != sb.sb_csum {
+                        warn!(
+                            "Superblock checksum mismatch at offset {}: expected {:08x}, calculated {:08x}",
+                            offset,
+                            sb.sb_csum,
+                            calculated_csum
+                        );
+                        continue;
+                    }
+
                     debug!("Successfully loaded superblock version 1.{}", minor);
                     return Ok(sb);
                 }
@@ -378,7 +471,7 @@ impl Superblock for SuperblockV1 {
         println!("     Raid Disks : {}", self.raid_disks);
         println!("           Size : {} sectors ({} MB)", 
                  self.size, self.size * 512 / 1024 / 1024);
-        println!("     Chunk Size : {} KB", self.chunksize / 1024);
+        println!("     Chunk Size : {} KB", self.chunk_size_bytes() / 1024);
         println!("         Layout : {}", self.layout);
         println!("    Data Offset : {} sectors", self.data_offset);
         println!("      Data Size : {} sectors", self.data_size);
@@ -423,49 +516,10 @@ impl Superblock for SuperblockV1 {
         debug!("Writing at offset {} for version 1.{}", offset, self.minor_version);
         file.seek(SeekFrom::Start(offset))?;
 
-        file.write_u32::<LittleEndian>(self.magic)?;
-        file.write_u32::<LittleEndian>(self.major_version)?;
-        file.write_u32::<LittleEndian>(self.feature_map)?;
-        file.write_u32::<LittleEndian>(self.pad0)?;
-        file.write_all(&self.set_uuid)?;
-        file.write_all(&self.set_name)?;
-        file.write_u64::<LittleEndian>(self.ctime)?;
-        file.write_i32::<LittleEndian>(self.level)?;
-        file.write_i32::<LittleEndian>(self.layout)?;
-        file.write_u64::<LittleEndian>(self.size)?;
-        file.write_i32::<LittleEndian>(self.chunksize)?;
-        file.write_i32::<LittleEndian>(self.raid_disks)?;
-        file.write_i32::<LittleEndian>(self.bitmap_offset)?;
-        
-        // Write extended fields
-        file.write_i32::<LittleEndian>(self.new_level)?;
-        file.write_u64::<LittleEndian>(self.reshape_position)?;
-        file.write_i32::<LittleEndian>(self.delta_disks)?;
-        file.write_i32::<LittleEndian>(self.new_layout)?;
-        file.write_i32::<LittleEndian>(self.new_chunk)?;
-        file.write_i32::<LittleEndian>(self.new_offset)?;
-        
-        file.write_u64::<LittleEndian>(self.data_offset)?;
-        file.write_u64::<LittleEndian>(self.data_size)?;
-        file.write_u64::<LittleEndian>(self.super_offset)?;
-        file.write_u64::<LittleEndian>(self.recovery_offset)?;
-        file.write_u32::<LittleEndian>(self.dev_number)?;
-        file.write_u32::<LittleEndian>(self.cnt_corrected_read)?;
-        
-        file.write_u64::<LittleEndian>(self.utime)?;
-        file.write_u64::<LittleEndian>(self.events)?;
-        file.write_u64::<LittleEndian>(self.resync_offset)?;
-        file.write_u32::<LittleEndian>(self.sb_csum)?;
-        file.write_u32::<LittleEndian>(self.max_dev)?;
-        
-        // Write device roles
-        for &role in &self.dev_roles {
-            file.write_u16::<LittleEndian>(role)?;
-        }
-        
-        file.write_u8(self.bblog_shift)?;
-        file.write_u16::<LittleEndian>(self.bblog_size)?;
-        file.write_u32::<LittleEndian>(self.bblog_offset)?;
+        let mut bytes = self.serialize_with_csum(0)?;
+        let checksum = Self::checksum(&bytes);
+        bytes[216..220].copy_from_slice(&checksum.to_le_bytes());
+        file.write_all(&bytes)?;
         
         file.flush()?;
         debug!("Superblock written successfully");
@@ -510,6 +564,64 @@ mod tests {
         assert_eq!(sb.get_device_role(2), "spare");
         assert_eq!(sb.get_device_role(3), "faulty");
         assert_eq!(sb.get_device_role(10), "unknown");
+    }
+
+    #[test]
+    fn test_superblock_v1_serialization_matches_kernel_layout() {
+        let mut sb = SuperblockV1::default();
+        sb.max_dev = 3;
+        sb.dev_roles = vec![0, 1, 2];
+        sb.chunksize = 1024;
+
+        let mut bytes = sb.serialize_with_csum(0).unwrap();
+        assert_eq!(bytes.len(), 256 + sb.max_dev as usize * 2);
+        assert_eq!(&bytes[168..184], &[0u8; 16]);
+        assert_eq!(bytes[184], 0);
+        assert_eq!(u64::from_le_bytes(bytes[192..200].try_into().unwrap()), sb.utime);
+        assert_eq!(u32::from_le_bytes(bytes[216..220].try_into().unwrap()), 0);
+        assert_eq!(u32::from_le_bytes(bytes[220..224].try_into().unwrap()), 3);
+        assert_eq!(&bytes[224..256], &[0u8; 32]);
+        assert_eq!(u16::from_le_bytes(bytes[256..258].try_into().unwrap()), 0);
+
+        let checksum = SuperblockV1::checksum(&bytes);
+        bytes[216..220].copy_from_slice(&checksum.to_le_bytes());
+        assert_eq!(u32::from_le_bytes(bytes[216..220].try_into().unwrap()), checksum);
+        assert_eq!(sb.chunk_size_bytes(), 512 * 1024);
+    }
+
+    #[test]
+    fn test_superblock_v1_write_and_load_roundtrip() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        file.as_file().set_len(16 * 1024 * 1024).unwrap();
+
+        let mut sb = SuperblockV1::default();
+        sb.set_uuid = [7; 16];
+        sb.ctime = 1234;
+        sb.utime = 1235;
+        sb.level = 5;
+        sb.layout = 2;
+        sb.size = 8192;
+        sb.chunksize = 1024;
+        sb.raid_disks = 3;
+        sb.data_offset = 16;
+        sb.data_size = 32752;
+        sb.super_offset = 8;
+        sb.recovery_offset = u64::MAX;
+        sb.dev_number = 1;
+        sb.events = 1;
+        sb.resync_offset = u64::MAX;
+        sb.max_dev = 3;
+        sb.dev_roles = vec![0, 1, 2];
+
+        sb.write_to_disk(file.path()).unwrap();
+        let loaded = SuperblockV1::load(file.path()).unwrap();
+
+        assert_eq!(loaded.set_uuid, sb.set_uuid);
+        assert_eq!(loaded.level, 5);
+        assert_eq!(loaded.layout, 2);
+        assert_eq!(loaded.chunk_size_bytes(), 512 * 1024);
+        assert_eq!(loaded.dev_roles, vec![0, 1, 2]);
+        assert_ne!(loaded.sb_csum, 0);
     }
     
     #[test]

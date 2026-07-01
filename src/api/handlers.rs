@@ -192,13 +192,24 @@ pub async fn create_array(
     
     let metadata = request.metadata.unwrap_or_else(|| "1.2".to_string());
     
+    let chunk_size_bytes = request
+        .chunk_size
+        .map(|chunk_size| {
+            u32::try_from(chunk_size)
+                .map_err(|_| crate::error::MdError::ConfigValidation(
+                    format!("Invalid chunk size: {} KiB", chunk_size)
+                ))
+                .and_then(crate::ops::create::chunk_size_kib_to_bytes)
+        })
+        .transpose()?;
+
     crate::ops::create::run(
         &md_device,
         request.level,
         request.raid_devices,
         &metadata,
         components,
-        request.chunk_size,
+        chunk_size_bytes,
         false, // Not a dry run
     )?;
     
@@ -333,6 +344,112 @@ pub async fn scrub_array(
         started: true,
         estimated_duration: None,
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/health/disks",
+    tag = "health",
+    request_body = DiskHealthRequest,
+    responses((status = 200, description = "Disk health analysis completed"))
+)]
+pub async fn analyze_disk_health(
+    Json(request): Json<DiskHealthRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let detector = crate::monitoring::FailureDetector::new(request.threshold);
+    let devices: Vec<std::path::PathBuf> = request.devices.iter().map(std::path::PathBuf::from).collect();
+    let results = detector.analyze_devices(devices);
+    Ok(Json(serde_json::json!({ "devices": results })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/migrations/start",
+    tag = "migrations",
+    request_body = MigrationRequest,
+    responses((status = 200, description = "Migration started or completed"))
+)]
+pub async fn start_migration(
+    Json(request): Json<MigrationRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let job = crate::migration::MigrationJob::new(request.source.into(), request.target.into());
+    let state = job.start_migration()?;
+    Ok(Json(serde_json::json!(state)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/migrations/pause",
+    tag = "migrations",
+    request_body = MigrationRequest,
+    responses((status = 200, description = "Migration paused"))
+)]
+pub async fn pause_migration(
+    Json(request): Json<MigrationRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let job = crate::migration::MigrationJob::new(request.source.into(), request.target.into());
+    let state = job.pause_migration()?;
+    Ok(Json(serde_json::json!(state)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/migrations/resume",
+    tag = "migrations",
+    request_body = MigrationRequest,
+    responses((status = 200, description = "Migration resumed"))
+)]
+pub async fn resume_migration(
+    Json(request): Json<MigrationRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let job = crate::migration::MigrationJob::new(request.source.into(), request.target.into());
+    let state = job.resume_migration()?;
+    Ok(Json(serde_json::json!(state)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/cluster/nodes",
+    tag = "cluster",
+    request_body = ClusterJoinRequest,
+    responses((status = 200, description = "Cluster node joined"))
+)]
+pub async fn join_cluster(
+    Json(request): Json<ClusterJoinRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let address = request.address.parse().map_err(|e| ApiError {
+        status: axum::http::StatusCode::BAD_REQUEST,
+        message: format!("Invalid node address: {}", e),
+    })?;
+    let mut manager = crate::cluster::ClusterManager::new()?;
+    manager.join_cluster(crate::cluster::NodeInfo {
+        id: request.node_id,
+        address,
+        is_active: true,
+    })?;
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/cluster/nodes",
+    tag = "cluster",
+    responses((status = 200, description = "Cluster nodes listed"))
+)]
+pub async fn list_cluster_nodes() -> Result<Json<serde_json::Value>, ApiError> {
+    let manager = crate::cluster::ClusterManager::new()?;
+    Ok(Json(serde_json::json!({ "nodes": manager.list_nodes() })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/cluster/sync",
+    tag = "cluster",
+    responses((status = 200, description = "Cluster metadata synced"))
+)]
+pub async fn sync_cluster_metadata() -> Result<Json<serde_json::Value>, ApiError> {
+    let manager = crate::cluster::ClusterManager::new()?;
+    Ok(Json(serde_json::json!(manager.sync_metadata()?)))
 }
 
 /// Health check endpoint

@@ -154,12 +154,15 @@ impl IntoResponse for RateLimitError {
 
 /// Rate limiting middleware
 pub async fn rate_limit_middleware(
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     limiter: Arc<RateLimiter>,
     request: Request,
     next: Next,
 ) -> Result<Response, RateLimitError> {
-    let ip = addr.ip().to_string();
+    let ip = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
     
     limiter.check_rate_limit(&ip).await?;
     

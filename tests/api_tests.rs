@@ -5,6 +5,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use http_body_util::BodyExt;
 use serde_json::json;
 use tower::ServiceExt;
 
@@ -12,6 +13,7 @@ mod common;
 
 #[tokio::test]
 async fn test_health_endpoint() {
+    let _guard = common::env_lock().await;
     let app = common::create_test_app().await;
     
     let response = app
@@ -26,7 +28,7 @@ async fn test_health_endpoint() {
     
     assert_eq!(response.status(), StatusCode::OK);
     
-    let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     
     assert_eq!(json["status"], "healthy");
@@ -35,6 +37,7 @@ async fn test_health_endpoint() {
 
 #[tokio::test]
 async fn test_metrics_endpoint() {
+    let _guard = common::env_lock().await;
     let app = common::create_test_app().await;
     
     let response = app
@@ -49,7 +52,7 @@ async fn test_metrics_endpoint() {
     
     assert_eq!(response.status(), StatusCode::OK);
     
-    let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
     let text = String::from_utf8(body.to_vec()).unwrap();
     
     assert!(text.contains("# HELP md_array_state"));
@@ -58,6 +61,7 @@ async fn test_metrics_endpoint() {
 
 #[tokio::test]
 async fn test_login_success() {
+    let _guard = common::env_lock().await;
     std::env::set_var("RMDADM_ADMIN_USER", "testuser");
     std::env::set_var("RMDADM_ADMIN_PASSWORD", "testpass");
     
@@ -82,7 +86,7 @@ async fn test_login_success() {
     
     assert_eq!(response.status(), StatusCode::OK);
     
-    let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     
     assert!(json["token"].is_string());
@@ -94,6 +98,7 @@ async fn test_login_success() {
 
 #[tokio::test]
 async fn test_login_failure() {
+    let _guard = common::env_lock().await;
     std::env::set_var("RMDADM_ADMIN_USER", "testuser");
     std::env::set_var("RMDADM_ADMIN_PASSWORD", "testpass");
     
@@ -124,6 +129,7 @@ async fn test_login_failure() {
 
 #[tokio::test]
 async fn test_api_key_authentication() {
+    let _guard = common::env_lock().await;
     std::env::set_var("RMDADM_API_KEY", "test-api-key-12345");
     
     let app = common::create_test_app().await;
@@ -146,6 +152,7 @@ async fn test_api_key_authentication() {
 
 #[tokio::test]
 async fn test_api_key_authentication_failure() {
+    let _guard = common::env_lock().await;
     std::env::set_var("RMDADM_API_KEY", "test-api-key-12345");
     
     let app = common::create_test_app().await;
@@ -168,6 +175,7 @@ async fn test_api_key_authentication_failure() {
 
 #[tokio::test]
 async fn test_jwt_authentication() {
+    let _guard = common::env_lock().await;
     std::env::set_var("RMDADM_ADMIN_USER", "testuser");
     std::env::set_var("RMDADM_ADMIN_PASSWORD", "testpass");
     
@@ -192,7 +200,7 @@ async fn test_jwt_authentication() {
         .await
         .unwrap();
     
-    let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let token = json["token"].as_str().unwrap();
     
@@ -216,6 +224,7 @@ async fn test_jwt_authentication() {
 
 #[tokio::test]
 async fn test_unauthorized_access() {
+    let _guard = common::env_lock().await;
     let app = common::create_test_app().await;
     
     let response = app
@@ -233,6 +242,7 @@ async fn test_unauthorized_access() {
 
 #[tokio::test]
 async fn test_rate_limiting() {
+    let _guard = common::env_lock().await;
     std::env::set_var("RMDADM_RATE_LIMIT_MAX", "3");
     std::env::set_var("RMDADM_RATE_LIMIT_WINDOW", "60");
     std::env::set_var("RMDADM_DISABLE_AUTH", "1");
@@ -280,6 +290,7 @@ async fn test_rate_limiting() {
 
 #[tokio::test]
 async fn test_list_arrays_empty() {
+    let _guard = common::env_lock().await;
     std::env::set_var("RMDADM_DISABLE_AUTH", "1");
     
     let app = common::create_test_app().await;
@@ -296,7 +307,7 @@ async fn test_list_arrays_empty() {
     
     assert_eq!(response.status(), StatusCode::OK);
     
-    let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     
     assert_eq!(json["total"], 0);
@@ -307,6 +318,7 @@ async fn test_list_arrays_empty() {
 
 #[tokio::test]
 async fn test_cors_headers() {
+    let _guard = common::env_lock().await;
     let app = common::create_test_app().await;
     
     let response = app

@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rmdadm-operator
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rmdadm-operator-config
+  namespace: kube-system
+data:
+  disable_auth: "0"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rmdadm-operator
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods", "events", "configmaps"]
+  verbs: ["get", "list", "watch", "create", "patch", "update"]
+- apiGroups: ["rmdadm.io"]
+  resources: ["raidarrays", "raidarrays/status"]
+  verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rmdadm-operator
+subjects:
+- kind: ServiceAccount
+  name: rmdadm-operator
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: rmdadm-operator
+  apiGroup: rbac.authorization.k8s.io

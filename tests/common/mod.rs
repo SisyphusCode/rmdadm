@@ -2,7 +2,17 @@
 
 use axum::Router;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::sync::RwLock;
+
+static ENV_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+pub async fn env_lock() -> tokio::sync::MutexGuard<'static, ()> {
+    ENV_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await
+}
 
 /// Create a test application instance with all routes configured
 pub async fn create_test_app() -> Router {
@@ -30,8 +40,8 @@ pub async fn create_test_app() -> Router {
         .merge(rmdadm::api::routes::array_routes(auth_state.clone()))
         .merge(rmdadm::api::routes::health_routes())
         .merge(rmdadm::api::routes::metrics_routes())
-        .layer(axum::middleware::from_fn(move |addr, req, next| {
+        .layer(axum::middleware::from_fn(move |req, next| {
             let limiter = rate_limiter.clone();
-            rmdadm::api::rate_limit::rate_limit_middleware(addr, limiter, req, next)
+            rmdadm::api::rate_limit::rate_limit_middleware(limiter, req, next)
         }))
 }

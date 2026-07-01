@@ -283,6 +283,27 @@ sudo rmdadm exporter
 
 # Start API daemon
 sudo rmdadm daemon --addr 0.0.0.0:8080
+
+# Analyze disk SMART health
+sudo rmdadm health /dev/sda /dev/sdb --threshold=100
+```
+
+#### Migration, Cluster, and BTRFS
+```bash
+# Copy data from one array/device to another with resumable state
+sudo rmdadm migration start /dev/md0 /dev/md1
+sudo rmdadm migration status /dev/md0 /dev/md1
+
+# Persist cluster nodes and sync local md metadata snapshot
+sudo rmdadm cluster join node-b 10.0.0.12:8080
+sudo rmdadm cluster list
+sudo rmdadm cluster sync
+
+# BTRFS helpers for filesystems hosted on MD arrays
+sudo rmdadm btrfs show /mnt/data
+sudo rmdadm btrfs scrub /mnt/data
+sudo rmdadm btrfs balance /mnt/data
+sudo rmdadm btrfs snapshot /mnt/data /mnt/snapshots/data-ro --readonly
 ```
 
 ### REST API
@@ -317,6 +338,7 @@ curl -H "X-API-Key: your-secure-api-key" \
 - `GET /health` - Service health check
 - `GET /metrics` - Prometheus metrics
 - `GET /api/v1/health` - Detailed health status
+- `POST /api/v1/health/disks` - Analyze SMART health and predictive failure indicators
 
 **Authentication:**
 - `POST /api/v1/auth/login` - Login and get JWT token
@@ -329,6 +351,14 @@ curl -H "X-API-Key: your-secure-api-key" \
 - `DELETE /api/v1/arrays/{name}` - Stop array (admin only)
 - `POST /api/v1/arrays/{name}/manage` - Manage disks (operator+)
 - `POST /api/v1/arrays/{name}/scrub` - Start scrub operation (operator+)
+
+**Migration & Cluster:**
+- `POST /api/v1/migrations/start` - Start a resumable array/device migration
+- `POST /api/v1/migrations/pause` - Pause a running migration
+- `POST /api/v1/migrations/resume` - Resume a paused migration
+- `GET /api/v1/cluster/nodes` - List known cluster nodes
+- `POST /api/v1/cluster/nodes` - Join/register a cluster node
+- `POST /api/v1/cluster/sync` - Write a local cluster metadata snapshot
 
 **Interactive Documentation:**
 - Visit `http://localhost:8080/swagger-ui/` for full API documentation
@@ -594,11 +624,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [x] Kubernetes operator for cloud-native deployments
 - [x] Advanced monitoring with predictive failure detection
 - [x] Multi-node cluster support
+- [x] BTRFS integration
 - [x] Automated testing framework
 
 ### Planned 🚧
 - [ ] Next generation Web UI
-- [ ] BTRFS integration
 
 ## ⚠️ Disclaimer
 

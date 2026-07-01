@@ -30,6 +30,9 @@ pub enum Command {
         raid_devices: u32,
         #[arg(short = 'm', long, default_value = "1.2")]
         metadata: String,
+        /// Chunk size in KiB
+        #[arg(long)]
+        chunk_size: Option<u32>,
         components: Vec<PathBuf>,
     },
     /// Print details of one or more md devices
@@ -95,6 +98,27 @@ pub enum Command {
         #[command(subcommand)]
         action: SpareAction,
     },
+    /// Copy data from one array/device to another with resumable state
+    Migration {
+        #[command(subcommand)]
+        action: MigrationAction,
+    },
+    /// Manage multi-node rmdadm cluster metadata
+    Cluster {
+        #[command(subcommand)]
+        action: ClusterAction,
+    },
+    /// Analyze disk health using SMART data
+    Health {
+        devices: Vec<PathBuf>,
+        #[arg(long, default_value_t = 100)]
+        threshold: u64,
+    },
+    /// BTRFS integration helpers for filesystems hosted on MD arrays
+    Btrfs {
+        #[command(subcommand)]
+        action: BtrfsAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -135,5 +159,64 @@ pub enum SpareAction {
         spare_device: PathBuf,
         #[arg(long)]
         slot: Option<u32>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum MigrationAction {
+    Start {
+        source: PathBuf,
+        target: PathBuf,
+    },
+    Pause {
+        source: PathBuf,
+        target: PathBuf,
+    },
+    Resume {
+        source: PathBuf,
+        target: PathBuf,
+    },
+    Status {
+        source: PathBuf,
+        target: PathBuf,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ClusterAction {
+    Join {
+        node_id: String,
+        address: std::net::SocketAddr,
+    },
+    Leave {
+        node_id: String,
+    },
+    List,
+    Sync,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BtrfsAction {
+    Show {
+        path: Option<PathBuf>,
+    },
+    Scrub {
+        path: PathBuf,
+        #[arg(long)]
+        readonly: bool,
+    },
+    ScrubStatus {
+        path: PathBuf,
+    },
+    Balance {
+        path: PathBuf,
+        #[arg(long)]
+        full: bool,
+    },
+    Snapshot {
+        source: PathBuf,
+        destination: PathBuf,
+        #[arg(long)]
+        readonly: bool,
     },
 }

@@ -12,6 +12,18 @@ use tracing::{info, warn, debug, instrument};
 const DEFAULT_CHUNK_SIZE: i32 = 512 * 1024; // 512K default chunk size
 const MD_DEVICE_CREATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
+pub fn chunk_size_kib_to_bytes(chunk_size_kib: u32) -> MdResult<i32> {
+    if !(4..=32768).contains(&chunk_size_kib) || !chunk_size_kib.is_power_of_two() {
+        return Err(MdError::ConfigValidation(format!(
+            "Invalid chunk size: {} KiB (must be a power of 2 between 4 and 32768 KiB)",
+            chunk_size_kib
+        )));
+    }
+
+    i32::try_from(chunk_size_kib * 1024)
+        .map_err(|_| MdError::ConfigValidation(format!("Invalid chunk size: {} KiB", chunk_size_kib)))
+}
+
 fn ensure_md_device(md_device: &Path, dry_run: bool) -> MdResult<()> {
     if md_device.exists() {
         let metadata = fs::metadata(md_device)?;
@@ -151,6 +163,8 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
         
         // Create device roles array - all devices get the same complete array layout
         let dev_roles: Vec<u16> = (0..raid_devices).map(|idx| idx as u16).collect();
+        let chunk_size_bytes = chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE);
+        let chunk_size_sectors = chunk_size_bytes / 512;
         
         // Write superblock
         let sb = SuperblockV1 {
@@ -165,14 +179,14 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
             level: level as i32,
             layout: 2, // RAID5 left-symmetric
             size: data_size / raid_devices as u64,
-            chunksize: chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE),
+            chunksize: chunk_size_sectors,
             raid_disks: raid_devices as i32,
             bitmap_offset: 0,
             new_level: level as i32,
             reshape_position: u64::MAX, // Not reshaping
             delta_disks: 0,
             new_layout: 0,
-            new_chunk: chunk_size.unwrap_or(DEFAULT_CHUNK_SIZE),
+            new_chunk: chunk_size_sectors,
             new_offset: 0,
             data_offset,
             data_size,
@@ -180,13 +194,16 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
             recovery_offset: u64::MAX, // Fully recovered
             dev_number: i as u32,
             cnt_corrected_read: 0,
+            device_uuid: [0; 16],
+            devflags: 0,
+            bblog_shift: 0,
+            bblog_size: 0,
+            bblog_offset: 0,
             dev_roles,
             sb_csum: 0, // Will be calculated
             events: 0,
             resync_offset: u64::MAX, // Mark as clean/in-sync
-            bblog_shift: 0,
-            bblog_size: 0,
-            bblog_offset: 0,
+            pad3: [0; 32],
             max_dev: raid_devices,
             minor_version,
             pad_bytes: Vec::new(),
@@ -214,4 +231,24 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
     }
     
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn converts_chunk_size_from_kib_to_kernel_bytes() {
+        assert_eq!(chunk_size_kib_to_bytes(512).unwrap(), 512 * 1024);
+        assert_eq!(chunk_size_kib_to_bytes(4).unwrap(), 4 * 1024);
+        assert_eq!(chunk_size_kib_to_bytes(32768).unwrap(), 32768 * 1024);
+    }
+
+    #[test]
+    fn rejects_invalid_chunk_sizes() {
+        assert!(chunk_size_kib_to_bytes(0).is_err());
+        assert!(chunk_size_kib_to_bytes(2).is_err());
+        assert!(chunk_size_kib_to_bytes(100).is_err());
+        assert!(chunk_size_kib_to_bytes(65536).is_err());
+    }
 }

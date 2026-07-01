@@ -104,9 +104,9 @@ pub async fn start_server(addr: SocketAddr, config: crate::config::Config) -> Re
         .merge(routes::array_routes(auth_state.clone()))
         .merge(routes::health_routes())
         .merge(routes::metrics_routes())
-        .layer(axum::middleware::from_fn(move |addr, req, next| {
+        .layer(axum::middleware::from_fn(move |req, next| {
             let limiter = rate_limiter.clone();
-            rate_limit::rate_limit_middleware(addr, limiter, req, next)
+            rate_limit::rate_limit_middleware(limiter, req, next)
         }))
         .layer(TraceLayer::new_for_http());
     

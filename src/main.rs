@@ -1,20 +1,6 @@
-mod cli;
-mod config;
-mod error;
-mod ioctl;
-mod sysfs;
-mod metadata;
-mod ops;
-mod validation;
-mod logging;
-mod api;
-mod daemon;
-mod notifications;
-mod monitoring;
-mod migration;
-mod cluster;
 use clap::Parser;
-use cli::{Cli, Command};
+use rmdadm::cli::{self, Cli, Command};
+use rmdadm::{api, btrfs, cluster, config, error, logging, migration, monitoring, ops};
 use tracing::{info, error};
 
 #[tokio::main]
@@ -38,9 +24,7 @@ async fn main() -> Result<(), error::MdError> {
         Command::Assemble { md_device, components, auto } => {
             if let Some(dev) = auto {
                 info!("Auto-assembling array using device {}", dev.display());
-                // In a real implementation, we would examine the superblock of `dev` to find the array name and other components.
-                // For now, this is a stub.
-                Ok(())
+                ops::assemble::auto(&dev, args.dry_run)
             } else if let (Some(md_dev), Some(comps)) = (md_device, components) {
                 info!("Assembling array from {} components", comps.len());
                 ops::assemble::run(&md_dev, comps, args.dry_run)
@@ -48,9 +32,12 @@ async fn main() -> Result<(), error::MdError> {
                 Err(error::MdError::ConfigValidation("Must provide either --auto or md_device and components".to_string()))
             }
         }
-        Command::Create { md_device, level, raid_devices, metadata, components } => {
+        Command::Create { md_device, level, raid_devices, metadata, chunk_size, components } => {
             info!("Creating RAID{} array with {} devices", level, raid_devices);
-            ops::create::run(&md_device, level, raid_devices, &metadata, components, None, args.dry_run)
+            let chunk_size_bytes = chunk_size
+                .map(ops::create::chunk_size_kib_to_bytes)
+                .transpose()?;
+            ops::create::run(&md_device, level, raid_devices, &metadata, components, chunk_size_bytes, args.dry_run)
         }
         Command::Detail { md_device } => {
             info!("Getting details for array: {}", md_device.display());
@@ -194,6 +181,63 @@ async fn main() -> Result<(), error::MdError> {
                     ops::spare::activate_spare(&md_device, &spare_device, slot)
                 }
             }
+        }
+        Command::Migration { action } => {
+            use cli::MigrationAction;
+            let run = |source, target| migration::MigrationJob::new(source, target);
+            let state = match action {
+                MigrationAction::Start { source, target } => run(source, target).start_migration()?,
+                MigrationAction::Pause { source, target } => run(source, target).pause_migration()?,
+                MigrationAction::Resume { source, target } => run(source, target).resume_migration()?,
+                MigrationAction::Status { source, target } => run(source, target).status()?,
+            };
+            println!("{}", serde_json::to_string_pretty(&state)?);
+            Ok(())
+        }
+        Command::Cluster { action } => {
+            use cli::ClusterAction;
+            let mut manager = cluster::ClusterManager::new()?;
+            match action {
+                ClusterAction::Join { node_id, address } => {
+                    manager.join_cluster(cluster::NodeInfo {
+                        id: node_id,
+                        address,
+                        is_active: true,
+                    })?;
+                    println!("Node joined");
+                }
+                ClusterAction::Leave { node_id } => {
+                    manager.leave_cluster(&node_id)?;
+                    println!("Node removed");
+                }
+                ClusterAction::List => {
+                    println!("{}", serde_json::to_string_pretty(&manager.list_nodes())?);
+                }
+                ClusterAction::Sync => {
+                    println!("{}", serde_json::to_string_pretty(&manager.sync_metadata()?)?);
+                }
+            }
+            Ok(())
+        }
+        Command::Health { devices, threshold } => {
+            let detector = monitoring::FailureDetector::new(threshold);
+            let results = detector.analyze_devices(&devices);
+            println!("{}", serde_json::to_string_pretty(&results)?);
+            Ok(())
+        }
+        Command::Btrfs { action } => {
+            use cli::BtrfsAction;
+            let output = match action {
+                BtrfsAction::Show { path } => btrfs::filesystem_show(path.as_deref())?,
+                BtrfsAction::Scrub { path, readonly } => btrfs::scrub_start(&path, readonly)?,
+                BtrfsAction::ScrubStatus { path } => btrfs::scrub_status(&path)?,
+                BtrfsAction::Balance { path, full } => btrfs::balance_start(&path, full)?,
+                BtrfsAction::Snapshot { source, destination, readonly } => {
+                    btrfs::subvolume_snapshot(&source, &destination, readonly)?
+                }
+            };
+            println!("{}", output);
+            Ok(())
         }
     };
 

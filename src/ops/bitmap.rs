@@ -2,8 +2,7 @@
 //! Bitmaps track which blocks have been written, enabling faster resync after crashes
 
 use std::path::Path;
-use std::fs;
-use tracing::{info, warn, debug};
+use tracing::{info, warn};
 use crate::error::MdError;
 use crate::sysfs::MdSysfs;
 

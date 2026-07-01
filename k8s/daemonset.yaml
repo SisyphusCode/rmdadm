@@ -14,13 +14,32 @@ spec:
       labels:
         app: rmdadm
     spec:
+      serviceAccountName: rmdadm-operator
       hostNetwork: true
       hostPID: true
       containers:
       - name: rmdadm
         image: sisyphuscode/rmdadm:latest
+        args: ["daemon", "--addr", "0.0.0.0:8080"]
         securityContext:
           privileged: true
+        ports:
+        - name: http
+          containerPort: 8080
+          hostPort: 8080
+        env:
+        - name: RMDADM_DISABLE_AUTH
+          valueFrom:
+            configMapKeyRef:
+              name: rmdadm-operator-config
+              key: disable_auth
+              optional: true
+        - name: RMDADM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: rmdadm-operator-secret
+              key: api_key
+              optional: true
         volumeMounts:
         - name: dev
           mountPath: /dev

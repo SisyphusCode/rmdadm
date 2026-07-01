@@ -1,6 +1,6 @@
 Name:           rmdadm
 Version:        0.1.0
-Release:        7%{?dist}
+Release:        9%{?dist}
 Summary:        A modern Rust rewrite of mdadm
 License:        MIT
 URL:            https://github.com/SisyphusCode/rmdadm
@@ -34,6 +34,16 @@ make install DESTDIR=%{buildroot} PREFIX=/usr BINDIR=/usr/sbin SYSTEMDDIR=%{_uni
 /usr/lib/udev/rules.d/64-rmdadm.rules
 
 %changelog
+* Tue Jun 30 2026 Sisyphus <sisyphus@example.com> - 0.1.0-9
+- Add operational migration, cluster, SMART health, and BTRFS CLI/API surfaces
+- Add Kubernetes CRD/RBAC manifests and fix container daemon startup
+- Implement assemble --auto and extend OpenAPI coverage
+
+* Tue Jun 30 2026 Sisyphus <sisyphus@example.com> - 0.1.0-8
+- Fix v1.x superblock layout, checksum, and chunk-size sector encoding
+- Add library target so API integration tests compile and pass
+- Align CLI/API chunk-size handling and stabilize API tests
+
 * Tue Jun 30 2026 Sisyphus <sisyphus@example.com> - 0.1.0-7
 - Fix MD ioctl ABI bindings and RUN_ARRAY invocation
 - Ensure create uses an actual MD block device before issuing ioctls

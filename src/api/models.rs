@@ -82,8 +82,8 @@ pub struct CreateArrayRequest {
     /// Component device paths
     #[schema(example = json!(vec!["/dev/sdb1", "/dev/sdc1"]))]
     pub components: Vec<String>,
-    /// Chunk size in bytes
-    #[schema(example = 524288)]
+    /// Chunk size in KiB
+    #[schema(example = 512)]
     pub chunk_size: Option<i32>,
 }
 
@@ -107,6 +107,29 @@ pub struct OperationResponse {
     pub message: String,
     /// Additional details (optional)
     pub details: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct MigrationRequest {
+    pub source: String,
+    pub target: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ClusterJoinRequest {
+    pub node_id: String,
+    pub address: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DiskHealthRequest {
+    pub devices: Vec<String>,
+    #[serde(default = "default_health_threshold")]
+    pub threshold: u64,
+}
+
+fn default_health_threshold() -> u64 {
+    100
 }
 
 /// Health check response
