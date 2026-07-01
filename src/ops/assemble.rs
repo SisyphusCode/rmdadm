@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::fs::OpenOptions;
 use std::os::fd::AsRawFd;
+use std::os::linux::fs::MetadataExt;
 use crate::error::{MdError, MdResult};
 use crate::ioctl::{self, MduArrayInfo, MduDiskInfo, MD_DISK_ACTIVE, MD_DISK_SYNC};
 use crate::metadata::{Superblock, v1::SuperblockV1};
@@ -49,15 +50,22 @@ pub fn run(md_device: &PathBuf, components: Vec<PathBuf>, dry_run: bool) -> MdRe
         first_sb.chunksize / 1024
     );
     
+    let md_rdev = md_file.metadata().map_err(MdError::Io)?.st_rdev();
+
+    array_info.major_version = first_sb.major_version as i32;
+    array_info.minor_version = first_sb.minor_version as i32;
+    array_info.patch_version = 0;
+    array_info.ctime = first_sb.ctime as u32;
+    array_info.utime = first_sb.utime as u32;
     array_info.level = first_sb.level;
     array_info.size = first_sb.size as i32;
     array_info.nr_disks = first_sb.raid_disks;
     array_info.raid_disks = first_sb.raid_disks;
-    array_info.md_minor = 0;
+    array_info.md_minor = ioctl::dev_minor(md_rdev);
     array_info.not_persistent = 0;
     array_info.state = 0;
-    array_info.active_disks = 0;
-    array_info.working_disks = 0;
+    array_info.active_disks = components.len() as i32;
+    array_info.working_disks = components.len() as i32;
     array_info.failed_disks = 0;
     array_info.spare_disks = 0;
     array_info.layout = first_sb.layout;
@@ -102,15 +110,14 @@ pub fn run(md_device: &PathBuf, components: Vec<PathBuf>, dry_run: bool) -> MdRe
         debug!("Component {}/{}: {} - UUID matches", i + 1, loaded_sbs.len(), comp.display());
 
         let comp_meta = std::fs::metadata(comp).map_err(MdError::Io)?;
-        use std::os::linux::fs::MetadataExt;
         let rdev = comp_meta.st_rdev();
         
         let mut disk_info = MduDiskInfo::default();
         disk_info.number = i as i32;
         disk_info.raid_disk = i as i32;
-        disk_info.state = MD_DISK_ACTIVE | MD_DISK_SYNC;
-        disk_info.major = ((rdev >> 8) & 0xff) as i32;
-        disk_info.minor = (rdev & 0xff) as i32;
+        disk_info.state = ioctl::disk_state(&[MD_DISK_ACTIVE, MD_DISK_SYNC]);
+        disk_info.major = ioctl::dev_major(rdev);
+        disk_info.minor = ioctl::dev_minor(rdev);
 
         if dry_run {
             info!("[DRY RUN] Would ADD_NEW_DISK {} (major={}, minor={})", 
@@ -131,8 +138,9 @@ pub fn run(md_device: &PathBuf, components: Vec<PathBuf>, dry_run: bool) -> MdRe
         info!("[DRY RUN] Array assembly simulation completed successfully");
     } else {
         info!("Starting array");
+        let mut param = ioctl::MduParam::default();
         unsafe {
-            ioctl::run_array(md_file.as_raw_fd())
+            ioctl::run_array(md_file.as_raw_fd(), &mut param as *mut _)
                 .map_err(|e| MdError::Nix(e).context("Failed to start array"))?;
         }
         info!("Array {} assembled and started successfully", md_device.display());

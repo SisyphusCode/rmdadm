@@ -1,15 +1,64 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::fs::{self, OpenOptions};
-use std::os::fd::AsRawFd;
+use std::os::linux::fs::MetadataExt;
+use std::os::unix::fs::FileTypeExt;
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::error::{MdError, MdResult};
-use crate::ioctl::{self, MduArrayInfo, MduDiskInfo, MD_DISK_ACTIVE, MD_DISK_SYNC};
+use crate::ioctl;
 use crate::metadata::{Superblock, v1::{SuperblockV1, MD_SB_MAGIC}};
 use crate::validation;
 use tracing::{info, warn, debug, instrument};
-use std::os::linux::fs::MetadataExt;
 
 const DEFAULT_CHUNK_SIZE: i32 = 512 * 1024; // 512K default chunk size
+const MD_DEVICE_CREATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+fn ensure_md_device(md_device: &Path, dry_run: bool) -> MdResult<()> {
+    if md_device.exists() {
+        let metadata = fs::metadata(md_device)?;
+        if !metadata.file_type().is_block_device() {
+            return Err(MdError::NotBlockDevice(md_device.to_path_buf()));
+        }
+
+        let major = ioctl::dev_major(metadata.st_rdev());
+        if major != ioctl::MD_MAJOR as i32 {
+            return Err(MdError::InvalidDevice(format!(
+                "{} is block major {}, not an MD device (major {})",
+                md_device.display(),
+                major,
+                ioctl::MD_MAJOR
+            )));
+        }
+
+        return Ok(());
+    }
+
+    let md_name = md_device
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| MdError::InvalidMetadata("Invalid MD device name".to_string()))?;
+
+    if dry_run {
+        info!("[DRY RUN] Would create MD device via sysfs: {}", md_device.display());
+        return Ok(());
+    }
+
+    info!("Creating MD device via sysfs: {}", md_device.display());
+    fs::write("/sys/module/md_mod/parameters/new_array", md_name)
+        .map_err(|e| MdError::Sysfs(format!("Failed to create MD device {}: {}", md_device.display(), e)))?;
+
+    let start = std::time::Instant::now();
+    while start.elapsed() < MD_DEVICE_CREATE_TIMEOUT {
+        if md_device.exists() {
+            return ensure_md_device(md_device, false);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    Err(MdError::Sysfs(format!(
+        "MD device {} was requested from sysfs but did not appear",
+        md_device.display()
+    )))
+}
 
 #[instrument(skip(components))]
 pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str, components: Vec<PathBuf>, chunk_size: Option<i32>, dry_run: bool) -> MdResult<()> {
@@ -52,21 +101,7 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
     
     debug!("Using metadata version 1.{}", minor_version);
 
-    // Create the MD device via sysfs if it doesn't exist
-    if !md_device.exists() {
-        info!("Creating MD device via sysfs: {}", md_device.display());
-        let md_name = md_device.file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| MdError::InvalidMetadata("Invalid MD device name".to_string()))?;
-        
-        // Try to create via /sys/module/md_mod/parameters/new_array
-        let new_array_path = "/sys/module/md_mod/parameters/new_array";
-        if let Err(e) = fs::write(new_array_path, md_name) {
-            debug!("Failed to create via sysfs ({}), device node should exist or will be created by kernel", e);
-        } else {
-            info!("MD device created via sysfs");
-        }
-    }
+    ensure_md_device(md_device, dry_run)?;
 
     // Generate a random UUID
     let uuid = uuid::Uuid::new_v4();
@@ -118,7 +153,7 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
         let dev_roles: Vec<u16> = (0..raid_devices).map(|idx| idx as u16).collect();
         
         // Write superblock
-        let mut sb = SuperblockV1 {
+        let sb = SuperblockV1 {
             magic: MD_SB_MAGIC,
             major_version: 1,
             feature_map: 0,
@@ -159,21 +194,6 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
         
         // Note: Checksum will be calculated by write_to_disk if needed
 
-        // Find major/minor for component
-        let comp_meta = std::fs::metadata(comp)
-            .map_err(|e| MdError::Io(std::io::Error::new(
-                e.kind(),
-                format!("Failed to get metadata for {}: {}", comp.display(), e)
-            )))?;
-        let rdev = comp_meta.st_rdev();
-        
-        let mut disk_info = MduDiskInfo::default();
-        disk_info.number = i as i32;
-        disk_info.major = ((rdev >> 8) & 0xff) as i32;
-        disk_info.minor = (rdev & 0xff) as i32;
-        disk_info.raid_disk = i as i32;
-        disk_info.state = (1 << MD_DISK_ACTIVE) | (1 << MD_DISK_SYNC);
-
         if dry_run {
             info!("[DRY RUN] Would write superblock to {}", comp.display());
         } else {
@@ -188,25 +208,9 @@ pub fn run(md_device: &PathBuf, level: u8, raid_devices: u32, metadata_str: &str
         info!("[DRY RUN] Would trigger kernel auto-assembly");
         info!("[DRY RUN] Array creation simulation completed successfully");
     } else {
-        // For v1.x metadata, trigger kernel auto-assembly
-        info!("Triggering kernel auto-assembly");
-        
-        // Trigger uevents to make kernel scan for MD superblocks
-        for comp in &components {
-            let dev_name = comp.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
-            let uevent_path = format!("/sys/block/{}/uevent", dev_name);
-            if let Err(e) = fs::write(&uevent_path, "change") {
-                debug!("Failed to trigger uevent for {}: {}", dev_name, e);
-            }
-        }
-        
-        // Give kernel time to auto-assemble
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        
-        info!("Array {} created successfully with UUID {}", md_device.display(), uuid);
-        info!("Note: Kernel will auto-assemble the array. Check /proc/mdstat for status.");
+        info!("Assembling and starting {} via MD ioctls", md_device.display());
+        super::assemble::run(md_device, components, false)?;
+        info!("Array {} created and started successfully with UUID {}", md_device.display(), uuid);
     }
     
     Ok(())
